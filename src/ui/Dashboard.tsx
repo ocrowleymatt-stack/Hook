@@ -11,6 +11,8 @@ type Job = {
   runAt?: string;
   updatedAt: string;
   error?: string;
+  result?: unknown;
+  payload?: unknown;
 };
 
 const pipeline = ["Search", "Think", "Build", "Render", "Deliver"];
@@ -23,12 +25,26 @@ export default function Dashboard() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [filter, setFilter] = useState("all");
   const [lastRefresh, setLastRefresh] = useState<string>("");
+  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  const [actionMessage, setActionMessage] = useState<string>("");
 
   async function refresh() {
-    const res = await fetch("/queue.json", { cache: "no-store" });
+    const res = await fetch("/queue", { cache: "no-store" });
     const data = await res.json();
     setJobs(data.jobs || []);
     setLastRefresh(new Date().toLocaleTimeString());
+  }
+
+  async function act(id: string, action: "retry" | "cancel" | "boost") {
+    setActionMessage(`${action} requested for ${id}`);
+    const res = await fetch(`/job/${id}/${action}`, { method: "POST" });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Unknown error" }));
+      setActionMessage(err.error || `Failed to ${action} job`);
+      return;
+    }
+    await refresh();
+    setActionMessage(`${action} complete for ${id}`);
   }
 
   useEffect(() => {
@@ -86,39 +102,52 @@ export default function Dashboard() {
 
       <section className="controlBar">
         <div>
-          <button onClick={() => setFilter("all")}>All</button>
-          <button onClick={() => setFilter("queued")}>Queued</button>
-          <button onClick={() => setFilter("running")}>Running</button>
-          <button onClick={() => setFilter("blocked")}>Blocked</button>
-          <button onClick={() => setFilter("failed")}>Failed</button>
+          {['all', 'queued', 'running', 'blocked', 'failed', 'complete'].map(f => (
+            <button key={f} className={filter === f ? "activeFilter" : ""} onClick={() => setFilter(f)}>{f}</button>
+          ))}
         </div>
-        <p>Last refresh: {lastRefresh || "pending"}</p>
+        <p>{actionMessage || `Last refresh: ${lastRefresh || "pending"}`}</p>
       </section>
 
-      <section className="jobDeck">
-        {visibleJobs.map(job => (
-          <article className="jobCard" key={job.id}>
-            <div className="jobTop">
-              <div>
-                <h2>{job.type}</h2>
-                <p>{job.id}</p>
+      <section className="opsLayout">
+        <div className="jobDeck">
+          {visibleJobs.map(job => (
+            <article className="jobCard" key={job.id} onClick={() => setSelectedJob(job)}>
+              <div className="jobTop">
+                <div>
+                  <h2>{job.type}</h2>
+                  <p>{job.id}</p>
+                </div>
+                <span className={statusClass(job.status)}>{job.status}</span>
               </div>
-              <span className={statusClass(job.status)}>{job.status}</span>
-            </div>
-            <div className="jobMeta">
-              <span>Priority: {job.priority ?? 0}</span>
-              <span>Attempts: {job.attempts}/{job.maxAttempts ?? "?"}</span>
-              <span>Run at: {job.runAt || "now"}</span>
-              <span>Updated: {job.updatedAt}</span>
-            </div>
-            {job.error && <p className="error">{job.error}</p>}
-            <div className="jobActions">
-              <button>Retry</button>
-              <button>Cancel</button>
-              <button>Boost Priority</button>
-            </div>
-          </article>
-        ))}
+              <div className="jobMeta">
+                <span>Priority: {job.priority ?? 0}</span>
+                <span>Attempts: {job.attempts}/{job.maxAttempts ?? "?"}</span>
+                <span>Run at: {job.runAt || "now"}</span>
+                <span>Updated: {job.updatedAt}</span>
+              </div>
+              {job.error && <p className="error">{job.error}</p>}
+              <div className="jobActions" onClick={(e) => e.stopPropagation()}>
+                <button onClick={() => act(job.id, "retry")}>Retry</button>
+                <button onClick={() => act(job.id, "cancel")}>Cancel</button>
+                <button onClick={() => act(job.id, "boost")}>Boost Priority</button>
+              </div>
+            </article>
+          ))}
+        </div>
+
+        <aside className="inspector">
+          <p className="eyebrow">JOB INSPECTOR</p>
+          {selectedJob ? (
+            <>
+              <h2>{selectedJob.type}</h2>
+              <p className="muted">{selectedJob.id}</p>
+              <pre>{JSON.stringify(selectedJob, null, 2)}</pre>
+            </>
+          ) : (
+            <p className="muted">Select a job to inspect payload, result and error state.</p>
+          )}
+        </aside>
       </section>
     </main>
   );
