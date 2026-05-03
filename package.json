@@ -8,23 +8,30 @@
     "worker": "tsx src/jobs/worker.ts",
     "build": "tsc && vite build",
     "start": "node dist/server/app.js",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "railway:start": "npm run start",
+    "render:start": "npm run start"
   },
   "dependencies": {
     "@google/genai": "latest",
+    "@openai/openai": "latest",
+    "cors": "latest",
     "dotenv": "latest",
     "express": "latest",
     "node-fetch": "latest",
-    "cors": "latest"
+    "openai": "latest"
   },
   "devDependencies": {
-    "@types/node": "latest",
     "@types/express": "latest",
-    "typescript": "latest",
-    "tsx": "latest",
-    "vite": "latest",
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@vitejs/plugin-react": "latest",
+    "concurrently": "latest",
     "react": "latest",
     "react-dom": "latest",
-    "concurrently": "latest"
+    "tsx": "latest",
+    "typescript": "latest",
+    "vite": "latest"
   }
 }
