@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "node deploy/app.js",
-    "start": "node deploy/app.js"
+    "start": "node deploy/app.V1.js"
   },
   "dependencies": {
     "express": "^4.18.2",
