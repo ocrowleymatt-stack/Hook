@@ -1,6 +1,10 @@
 export function decideWorkflow(input = '') {
   const text = String(input || '').toLowerCase();
 
+  if (text.includes('network') || text.includes('research')) {
+    return ['network_research', 'risk_review', 'export_report'];
+  }
+
   if (text.includes('evidence') || text.includes('annex') || text.includes('bundle') || text.includes('court')) {
     return ['deep_research', 'annex_x', 'risk_review', 'export_report'];
   }
