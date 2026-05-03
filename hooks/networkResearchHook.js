@@ -1,7 +1,9 @@
 import { searchWeb } from '../engine/webSearch.js';
 
+const SCORING_VERSION = 'strict_quiet_network_v2';
+
 const LOCAL_TERMS = [
-  'shropshire', 'ironbridge', 'bridgnorth', 'dudmaston', 'burwarton', 'dudley', 'telford', 'madeley', 'wharfage', 'quatt'
+  'shropshire', 'ironbridge', 'bridgnorth', 'dudmaston', 'burwarton', 'telford', 'madeley', 'wharfage', 'quatt'
 ];
 
 const NETWORK_TERMS = [
@@ -13,9 +15,10 @@ const BELIEF_TERMS = [
   'ecclesia', 'christadelphian', 'chapel', 'parish', 'crowley', 'thelema', 'tarot', 'numerology', 'gematria', 'spiritual', 'healing'
 ];
 
-const INSTITUTION_TERMS = ['companies house', 'charity commission', 'charity', 'trust', 'director', 'committee'];
-const POLICE_TERMS = ['wanted', 'police', 'constabulary', 'absconded', 'prison', 'court', 'hmp', 'wounding'];
+const INSTITUTION_TERMS = ['companies house', 'charity commission', 'charity', 'trust', 'director', 'committee', 'society', 'council'];
+const POLICE_TERMS = ['wanted', 'police', 'constabulary', 'absconded', 'prison', 'court', 'hmp', 'wounding', 'convicted'];
 const NOISE_DOMAINS = ['facebook.com', 'linkedin.com'];
+const WEAK_FIRST_NAMES = ['scott', 'jamie', 'maureen', 'michael', 'mike', 'eddie', 'brett', 'martin', 'steve'];
 
 function includesAny(text, terms) {
   return terms.filter(term => text.includes(term));
@@ -41,10 +44,12 @@ function extractSignals(text = '') {
 function scoreRelevance(result = {}, entityName = '') {
   const text = `${result.title || ''} ${result.snippet || ''} ${result.link || ''}`.toLowerCase();
   const nameParts = String(entityName).toLowerCase().split(/[^a-z0-9]+/).filter(x => x.length > 2);
+  const meaningfulNameParts = nameParts.filter(p => !WEAK_FIRST_NAMES.includes(p));
   const reasons = [];
   let score = 0;
 
   const nameHits = nameParts.filter(p => text.includes(p));
+  const meaningfulNameHits = meaningfulNameParts.filter(p => text.includes(p));
   const localHits = includesAny(text, LOCAL_TERMS);
   const networkHits = includesAny(text, NETWORK_TERMS);
   const beliefHits = includesAny(text, BELIEF_TERMS);
@@ -52,23 +57,31 @@ function scoreRelevance(result = {}, entityName = '') {
   const policeHits = includesAny(text, POLICE_TERMS);
   const noiseHits = includesAny(text, NOISE_DOMAINS);
 
-  // Full-name/person-name hits matter, but surname-only is not enough by itself.
-  if (nameHits.length >= 2) {
-    score += 25;
+  const fullNameHit = nameHits.length >= 2;
+  const surnameOrNetworkHit = meaningfulNameHits.length > 0 || networkHits.length > 0;
+  const quietInstitutional = institutionHits.length > 0 && policeHits.length === 0;
+  const quietLocalNetwork = localHits.length > 0 && networkHits.length > 0 && policeHits.length === 0;
+  const quietBeliefLocal = localHits.length > 0 && beliefHits.length > 0 && policeHits.length === 0;
+  const policeDominated = policeHits.length > 0 && !quietInstitutional && beliefHits.length === 0;
+
+  if (fullNameHit) {
+    score += 18;
     reasons.push(`full_or_near_name_match:${nameHits.join(',')}`);
-  } else if (nameHits.length === 1) {
-    score += 8;
-    reasons.push(`partial_name_match:${nameHits.join(',')}`);
+  } else if (meaningfulNameHits.length) {
+    score += 10;
+    reasons.push(`meaningful_name_match:${meaningfulNameHits.join(',')}`);
+  } else if (nameHits.length) {
+    score += 2;
+    reasons.push(`weak_name_fragment:${nameHits.join(',')}`);
   }
 
-  // Local + network traces are the gold. Quiet, boring, connective tissue.
   if (localHits.length) {
-    score += Math.min(35, localHits.length * 12);
+    score += Math.min(25, localHits.length * 8);
     reasons.push(`local_trace:${localHits.join(',')}`);
   }
 
   if (networkHits.length) {
-    score += Math.min(35, networkHits.length * 12);
+    score += Math.min(30, networkHits.length * 10);
     reasons.push(`network_trace:${networkHits.join(',')}`);
   }
 
@@ -82,14 +95,13 @@ function scoreRelevance(result = {}, entityName = '') {
     reasons.push(`institution_trace:${institutionHits.join(',')}`);
   }
 
-  // Police/wanted style results are not automatically gold; they are often obvious/noisy.
   if (policeHits.length) {
-    score += 5;
-    reasons.push(`police_noise_or_context:${policeHits.join(',')}`);
+    score -= 25;
+    reasons.push(`police_headline_downgrade:${policeHits.join(',')}`);
   }
 
-  if (noiseHits.length && !(localHits.length && networkHits.length)) {
-    score -= 10;
+  if (noiseHits.length) {
+    score -= 12;
     reasons.push(`noisy_source:${noiseHits.join(',')}`);
   }
 
@@ -99,24 +111,25 @@ function scoreRelevance(result = {}, entityName = '') {
   }
 
   const hasGoldPattern =
-    (localHits.length && networkHits.length) ||
-    (networkHits.length && institutionHits.length) ||
-    (localHits.length && beliefHits.length) ||
-    (nameHits.length >= 2 && localHits.length) ||
-    (nameHits.length >= 2 && networkHits.length);
+    quietLocalNetwork ||
+    quietBeliefLocal ||
+    (surnameOrNetworkHit && quietInstitutional) ||
+    (localHits.length > 0 && institutionHits.length > 0 && networkHits.length > 0 && policeHits.length === 0);
 
-  const hasOnlySensationalPolice = policeHits.length && !networkHits.length && !beliefHits.length && !institutionHits.length;
-
-  const keep = hasGoldPattern || score >= 45;
-  const grade = hasGoldPattern ? 'gold_local_network_trace' : keep ? 'kept_context_trace' : 'rejected_or_background';
+  const keep = hasGoldPattern || (score >= 40 && policeHits.length === 0);
+  let grade = 'rejected_or_background';
+  if (hasGoldPattern) grade = 'gold_quiet_network_trace';
+  else if (keep) grade = 'kept_context_trace';
+  else if (policeDominated) grade = 'police_headline_noise';
 
   return {
+    scoringVersion: SCORING_VERSION,
     score,
     grade,
     reasons,
     keep,
     hasGoldPattern,
-    hasOnlySensationalPolice,
+    policeDominated,
     localHits,
     networkHits,
     beliefHits,
@@ -126,11 +139,10 @@ function scoreRelevance(result = {}, entityName = '') {
 }
 
 function classifyFinding(result = {}, relevance = {}) {
-  if (!relevance.keep) return 'rejected_or_background';
-  if (relevance.grade === 'gold_local_network_trace') return 'gold_local_network_trace';
-  if (relevance.hasOnlySensationalPolice) return 'sensational_police_hit_requires_caution';
-  if (relevance.score >= 65) return 'strong_context_trace';
-  return 'weak_but_interesting_trace';
+  if (!relevance.keep) return relevance.grade || 'rejected_or_background';
+  if (relevance.grade === 'gold_quiet_network_trace') return 'gold_quiet_network_trace';
+  if (relevance.score >= 60) return 'strong_quiet_context_trace';
+  return 'weak_but_interesting_quiet_trace';
 }
 
 function isSearchableName(name = '') {
@@ -220,7 +232,8 @@ export const networkResearchHook = {
 
     return {
       stage: 'network_research_results',
-      mode: 'local_network_trace_first_pass',
+      mode: SCORING_VERSION,
+      scoringVersion: SCORING_VERSION,
       entityCount: entities.length,
       queryLimit,
       localTerms: LOCAL_TERMS,
@@ -228,7 +241,7 @@ export const networkResearchHook = {
       beliefTerms: BELIEF_TERMS,
       results,
       diagnostics: diagnostics.slice(0, 10),
-      warning: 'Search results are leads. Quiet local/network traces are prioritised; sensational police hits are downgraded unless they connect to the wider network.'
+      warning: 'Search results are leads. This version favours quiet local/institutional/network traces and hard-downgrades police/wanted/prison headlines.'
     };
   }
 };
