@@ -1,5 +1,17 @@
 import { searchWeb } from '../engine/webSearch.js';
 
+const CONTEXT_TERMS = [
+  'shropshire', 'ironbridge', 'bridgnorth', 'dudmaston', 'burwarton',
+  'millard', 'hardman', 'claybrook', 'gee', 'boyne', 'mottershead', 'hamilton russell',
+  'ecclesia', 'christadelphian', 'crowley', 'tarot', 'numerology', 'gematria',
+  'police', 'constabulary', 'cps', 'court'
+];
+
+const REJECTION_TERMS = [
+  'bristol', 'cambridgeshire', 'huntingdon', 'kingston upon hull', 'dundee',
+  'northumberland', 'croydon', 'tower hamlets', 'somerset', 'london', 'nottingham'
+];
+
 function extractSignals(text = '') {
   const t = String(text).toLowerCase();
   return {
@@ -14,13 +26,44 @@ function extractSignals(text = '') {
   };
 }
 
-function classifyFinding(result = {}) {
+function scoreRelevance(result = {}, entityName = '') {
   const text = `${result.title || ''} ${result.snippet || ''} ${result.link || ''}`.toLowerCase();
-  if (text.includes('company-information.service.gov.uk') || text.includes('companies house')) return 'probable';
-  if (text.includes('charitycommission') || text.includes('gov.uk')) return 'probable';
-  if (text.includes('christadelphian') || text.includes('ecclesia')) return 'possible';
-  if (text.includes('church') || text.includes('parish') || text.includes('estate') || text.includes('hall')) return 'possible';
-  return 'unknown';
+  const nameParts = String(entityName).toLowerCase().split(/[^a-z0-9]+/).filter(x => x.length > 2);
+  const reasons = [];
+  let score = 0;
+
+  const nameHits = nameParts.filter(p => text.includes(p));
+  if (nameHits.length) {
+    score += Math.min(30, nameHits.length * 15);
+    reasons.push(`name_match:${nameHits.join(',')}`);
+  }
+
+  const contextHits = CONTEXT_TERMS.filter(term => text.includes(term));
+  if (contextHits.length) {
+    score += Math.min(45, contextHits.length * 15);
+    reasons.push(`context:${contextHits.join(',')}`);
+  }
+
+  if (result.priority) {
+    score += 10;
+    reasons.push('priority_domain');
+  }
+
+  const rejectionHits = REJECTION_TERMS.filter(term => text.includes(term));
+  if (rejectionHits.length && !contextHits.length) {
+    score -= 35;
+    reasons.push(`outside_context:${rejectionHits.join(',')}`);
+  }
+
+  const keep = score >= 25 && !(/^unknown$/i.test(entityName));
+  return { score, reasons, keep, rejectionHits, contextHits };
+}
+
+function classifyFinding(result = {}, relevance = {}) {
+  if (!relevance.keep) return 'rejected_or_weak';
+  if (relevance.score >= 60) return 'probable_context_match';
+  if (relevance.score >= 35) return 'possible_context_match';
+  return 'weak_context_match';
 }
 
 function isSearchableName(name = '') {
@@ -33,18 +76,14 @@ function isSearchableName(name = '') {
 
 function buildQueries(name) {
   return [
-    `${name} UK`,
-    `${name} Companies House`,
-    `${name} Charity Commission`,
-    `${name} ecclesia`,
-    `${name} Christadelphian`,
-    `${name} Ironbridge Shropshire`,
-    `"${name}" Shropshire`,
-    `"${name}" ecclesia`,
-    `"${name}" Christadelphian`,
-    `"${name}" police`,
-    `"${name}" tarot`,
-    `"${name}" gematria`
+    `${name} Shropshire Ironbridge`,
+    `${name} Bridgnorth Dudmaston Burwarton`,
+    `${name} Companies House Shropshire`,
+    `${name} Charity Commission Shropshire`,
+    `${name} ecclesia Christadelphian`,
+    `${name} police court`,
+    `"${name}" "Hamilton Russell"`,
+    `"${name}" Mottershead Hardman Claybrook Gee Boyne`
   ];
 }
 
@@ -68,41 +107,56 @@ export const networkResearchHook = {
 
     for (const e of entities) {
       const queries = buildQueries(e.name).slice(0, queryLimit);
-      const findings = [];
+      const keptFindings = [];
+      const rejectedFindings = [];
       const searchNotes = [];
 
       for (const q of queries) {
-        const res = await searchWeb(q, 3);
+        const res = await searchWeb(q, 5);
         if (res.note || res.error || res.diagnostics) {
           searchNotes.push({ query: q, note: res.note, error: res.error, diagnostics: res.diagnostics });
         }
 
         for (const r of res.results || []) {
-          findings.push({
+          const relevance = scoreRelevance(r, e.name);
+          const finding = {
             query: q,
             source: r.link,
             title: r.title,
             snippet: r.snippet,
             priority: Boolean(r.priority),
             signals: extractSignals(`${r.title} ${r.snippet} ${r.link}`),
-            confidence: classifyFinding(r),
+            relevance,
+            confidence: classifyFinding(r, relevance),
             statementType: 'public_source_lead_not_verified'
-          });
+          };
+          if (relevance.keep) keptFindings.push(finding);
+          else rejectedFindings.push(finding);
         }
       }
 
       diagnostics.push(...searchNotes.slice(0, 3));
-      results.push({ entity: e.name, id: e.id, queryCount: queries.length, findings, searchNotes: searchNotes.slice(0, 3) });
+      results.push({
+        entity: e.name,
+        id: e.id,
+        queryCount: queries.length,
+        keptCount: keptFindings.length,
+        rejectedCount: rejectedFindings.length,
+        findings: keptFindings,
+        rejectedFindings: rejectedFindings.slice(0, 10),
+        searchNotes: searchNotes.slice(0, 3)
+      });
     }
 
     return {
       stage: 'network_research_results',
-      mode: 'safe_first_pass',
+      mode: 'context_filtered_first_pass',
       entityCount: entities.length,
       queryLimit,
+      contextTerms: CONTEXT_TERMS,
       results,
       diagnostics: diagnostics.slice(0, 10),
-      warning: 'Search results are public-source leads. Confirm identity and relevance before treating a link as evidenced.'
+      warning: 'Search results are public-source leads. Context match does not prove identity or relationship; verify before use.'
     };
   }
 };
