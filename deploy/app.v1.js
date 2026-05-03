@@ -77,6 +77,8 @@ let lastObject=null;
 const out=document.getElementById('out');
 const readable=document.getElementById('readable');
 const status=document.getElementById('status');
+const command=document.getElementById('command');
+const runBtn=document.getElementById('run');
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function asJson(x){try{return JSON.stringify(x,null,2)}catch{return String(x)}}
 function metric(label,value){return '<div class="metric"><span>'+esc(label)+'</span><b>'+esc(value)+'</b></div>'}
@@ -85,49 +87,27 @@ function renderReadable(obj){
   const trace=obj.trace||obj.result?.trace||[];
   const final=obj.final||obj.result?.final||obj;
   const tasks=final?.report?.tasks||final?.tasks||final?.report?.previous?.tasks||[];
+  const results=final?.report?.previous?.results||final?.results||[];
   const chain=obj.chain||obj.result?.chain||[];
   const html=[];
-  html.push('<div class="summary">'+metric('OK', obj.ok===false?'No':'Yes')+metric('Chain', chain.length||trace.length||'-')+metric('Trace Steps', trace.length||'-')+metric('Tasks', tasks.length||'-')+'</div>');
+  html.push('<div class="summary">'+metric('OK', obj.ok===false?'No':'Yes')+metric('Chain', chain.length||trace.length||'-')+metric('Trace Steps', trace.length||'-')+metric('Tasks', tasks.length||'-')+metric('Results', results.length||'-')+'</div>');
   if(chain.length) html.push('<p>'+chain.map(x=>'<span class="pill">'+esc(x)+'</span>').join('')+'</p>');
-  if(trace.length){
-    html.push('<details class="section" open><summary>Execution Trace</summary><pre>'+esc(asJson(trace))+'</pre></details>');
-  }
-  if(tasks.length){
-    const top=tasks.slice(0,20).map(t=>'• '+(t.entity||t.name||t.id)+'\n  '+(t.publicSearchQueries||t.queries||[]).slice(0,3).join('\n  ')).join('\n\n');
-    html.push('<details class="section" open><summary>Top Research Tasks</summary><pre>'+esc(top)+'</pre></details>');
-  }
+  if(trace.length){html.push('<details class="section" open><summary>Execution Trace</summary><pre>'+esc(asJson(trace))+'</pre></details>');}
+  if(tasks.length){const top=tasks.slice(0,20).map(t=>'• '+(t.entity||t.name||t.id)+'\n  '+(t.publicSearchQueries||t.queries||[]).slice(0,3).join('\n  ')).join('\n\n');html.push('<details class="section" open><summary>Top Research Tasks</summary><pre>'+esc(top)+'</pre></details>');}
+  if(results.length){const topResults=results.slice(0,10).map(r=>'• '+r.entity+' — findings: '+(r.findings?.length||0)).join('\n');html.push('<details class="section" open><summary>Search Results Summary</summary><pre>'+esc(topResults)+'</pre></details>');}
   html.push('<details class="section"><summary>Final Output</summary><pre>'+esc(asJson(final))+'</pre></details>');
   readable.innerHTML=html.join('');
 }
 function setOut(value){lastObject=value;lastOutput=typeof value==='string'?value:JSON.stringify(value,null,2);out.textContent=lastOutput;renderReadable(value);}
-async function copyText(text){
-  try{await navigator.clipboard.writeText(text);status.textContent='Copied all output to clipboard.';return true;}catch(e){
-    const box=document.getElementById('copyBox');box.value=text;box.focus();box.select();box.setSelectionRange(0,999999);
-    try{document.execCommand('copy');status.textContent='Copied using fallback selector.';return true;}catch{status.textContent='Copy failed — text selected in fallback box.';return false;}
-  }
-}
-function selectOutput(){
-  const range=document.createRange();range.selectNodeContents(out);const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);status.textContent='Output selected. Use iOS Copy from the selection menu if needed.';
-}
-document.getElementById('file').onchange=async(e)=>{
-  const file=e.target.files[0]; if(!file)return;
-  const text=await file.text();
-  try{dataset=JSON.parse(text);status.textContent='Dataset loaded: '+file.name+' | entities/nodes/rows: '+(dataset.entities?.length||dataset.nodes?.length||dataset.rows?.length||Object.keys(dataset).length);}
-  catch{dataset={rawText:text, filename:file.name};status.textContent='Loaded as raw text: '+file.name;}
-};
-document.getElementById('run').onclick=async()=>{
-  const message=document.getElementById('command').value.trim(); if(!message)return setOut('Type a command first.');
-  setOut('Running…');
-  const res=await fetch('/chain',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message,dataset})});
-  setOut(await res.json());
-};
+async function copyText(text){try{await navigator.clipboard.writeText(text);status.textContent='Copied all output to clipboard.';return true;}catch(e){const box=document.getElementById('copyBox');box.value=text;box.focus();box.select();box.setSelectionRange(0,999999);try{document.execCommand('copy');status.textContent='Copied using fallback selector.';return true;}catch{status.textContent='Copy failed — text selected in fallback box.';return false;}}}
+function selectOutput(){const range=document.createRange();range.selectNodeContents(out);const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);status.textContent='Output selected. Use iOS Copy from the selection menu if needed.';}
+document.getElementById('file').onchange=async(e)=>{const file=e.target.files[0]; if(!file)return; const text=await file.text(); try{dataset=JSON.parse(text);status.textContent='Dataset loaded: '+file.name+' | entities/nodes/rows: '+(dataset.entities?.length||dataset.nodes?.length||dataset.rows?.length||Object.keys(dataset).length);}catch{dataset={rawText:text, filename:file.name};status.textContent='Loaded as raw text: '+file.name;}};
+runBtn.onclick=async()=>{try{const message=command.value.trim(); if(!message)return setOut('Type a command first.'); runBtn.disabled=true; runBtn.textContent='Running…'; status.textContent='Running chain…'; setOut('Running…'); const res=await fetch('/chain',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message,dataset})}); const text=await res.text(); let data; try{data=text?JSON.parse(text):null}catch{data={raw:text}} if(!res.ok){throw new Error(data?.error||res.status+' '+res.statusText)} setOut(data); status.textContent='Run complete.';}catch(err){setOut({ok:false,error:err.message});status.textContent='Run failed: '+err.message;}finally{runBtn.disabled=false;runBtn.textContent='Run';}};
 document.getElementById('copyAll').onclick=()=>copyText(lastOutput);
 document.getElementById('selectAll').onclick=selectOutput;
-document.getElementById('download').onclick=()=>{
-  const blob=new Blob([lastOutput],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='hook-output-'+Date.now()+'.json';a.click();URL.revokeObjectURL(url);status.textContent='Download created.';
-};
+document.getElementById('download').onclick=()=>{const blob=new Blob([lastOutput],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='hook-output-'+Date.now()+'.json';a.click();URL.revokeObjectURL(url);status.textContent='Download created.';};
 document.getElementById('expand').onclick=(e)=>{out.classList.toggle('fullscreen');e.target.textContent=out.classList.contains('fullscreen')?'Shrink Raw':'Expand Raw';};
-document.getElementById('clear').onclick=()=>setOut('Ready.');
+document.getElementById('clear').onclick=()=>{command.value='';setOut('Ready.');status.textContent=dataset?'Dataset still loaded.':'No dataset loaded.';};
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&out.classList.contains('fullscreen'))out.classList.remove('fullscreen');});
 </script>
 </body>
@@ -137,11 +117,15 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&out.classList.conta
 app.get('/', (_, res) => res.send(page()));
 
 app.post('/chain', async (req, res) => {
-  const message = req.body.message;
-  const chain = decideWorkflow(message);
-  const result = await runChain({ payload: req.body }, chain);
-  await appendLog({ id: Date.now(), message, chain, result });
-  res.json(result);
+  try {
+    const message = req.body.message;
+    const chain = decideWorkflow(message);
+    const result = await runChain({ payload: req.body }, chain);
+    await appendLog({ id: Date.now(), message, chain, result });
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e?.message || String(e) });
+  }
 });
 
 app.get('/logs', async (_, res) => res.json(await getLogs()));
