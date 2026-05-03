@@ -1,28 +1,40 @@
 import { searchWeb } from '../engine/webSearch.js';
 
-const CONTEXT_TERMS = [
-  'shropshire', 'ironbridge', 'bridgnorth', 'dudmaston', 'burwarton',
-  'millard', 'hardman', 'claybrook', 'gee', 'boyne', 'mottershead', 'hamilton russell',
-  'ecclesia', 'christadelphian', 'crowley', 'tarot', 'numerology', 'gematria',
-  'police', 'constabulary', 'cps', 'court'
+const LOCAL_TERMS = [
+  'shropshire', 'ironbridge', 'bridgnorth', 'dudmaston', 'burwarton', 'dudley', 'telford', 'madeley', 'wharfage', 'quatt'
 ];
 
-const REJECTION_TERMS = [
-  'bristol', 'cambridgeshire', 'huntingdon', 'kingston upon hull', 'dundee',
-  'northumberland', 'croydon', 'tower hamlets', 'somerset', 'london', 'nottingham'
+const NETWORK_TERMS = [
+  'millard', 'hardman', 'claybrook', 'gee', 'boyne', 'mottershead', 'hamilton russell',
+  'dudmaston hall', 'burwarton hall', 'agricultural society', 'village hall'
 ];
+
+const BELIEF_TERMS = [
+  'ecclesia', 'christadelphian', 'chapel', 'parish', 'crowley', 'thelema', 'tarot', 'numerology', 'gematria', 'spiritual', 'healing'
+];
+
+const INSTITUTION_TERMS = ['companies house', 'charity commission', 'charity', 'trust', 'director', 'committee'];
+const POLICE_TERMS = ['wanted', 'police', 'constabulary', 'absconded', 'prison', 'court', 'hmp', 'wounding'];
+const NOISE_DOMAINS = ['facebook.com', 'linkedin.com'];
+
+function includesAny(text, terms) {
+  return terms.filter(term => text.includes(term));
+}
 
 function extractSignals(text = '') {
   const t = String(text).toLowerCase();
   return {
+    local: includesAny(t, LOCAL_TERMS).length > 0,
+    network: includesAny(t, NETWORK_TERMS).length > 0,
+    belief: includesAny(t, BELIEF_TERMS).length > 0,
+    institution: includesAny(t, INSTITUTION_TERMS).length > 0,
+    police: includesAny(t, POLICE_TERMS).length > 0,
     company: t.includes('director') || t.includes('company') || t.includes('companies house'),
     charity: t.includes('charity') || t.includes('charity commission'),
     church: t.includes('church') || t.includes('parish') || t.includes('chapel') || t.includes('ecclesia') || t.includes('christadelphian'),
     christadelphian: t.includes('christadelphian') || t.includes('ecclesia'),
     estate: t.includes('hall') || t.includes('estate') || t.includes('dudmaston') || t.includes('burwarton'),
-    location: t.includes('shropshire') || t.includes('ironbridge') || t.includes('bridgnorth'),
-    esoteric: t.includes('crowley') || t.includes('thelema') || t.includes('tarot') || t.includes('numerology') || t.includes('gematria'),
-    police: t.includes('police') || t.includes('constabulary') || t.includes('officer') || t.includes('court') || t.includes('cps')
+    esoteric: t.includes('crowley') || t.includes('thelema') || t.includes('tarot') || t.includes('numerology') || t.includes('gematria')
   };
 }
 
@@ -33,37 +45,92 @@ function scoreRelevance(result = {}, entityName = '') {
   let score = 0;
 
   const nameHits = nameParts.filter(p => text.includes(p));
-  if (nameHits.length) {
-    score += Math.min(30, nameHits.length * 15);
-    reasons.push(`name_match:${nameHits.join(',')}`);
+  const localHits = includesAny(text, LOCAL_TERMS);
+  const networkHits = includesAny(text, NETWORK_TERMS);
+  const beliefHits = includesAny(text, BELIEF_TERMS);
+  const institutionHits = includesAny(text, INSTITUTION_TERMS);
+  const policeHits = includesAny(text, POLICE_TERMS);
+  const noiseHits = includesAny(text, NOISE_DOMAINS);
+
+  // Full-name/person-name hits matter, but surname-only is not enough by itself.
+  if (nameHits.length >= 2) {
+    score += 25;
+    reasons.push(`full_or_near_name_match:${nameHits.join(',')}`);
+  } else if (nameHits.length === 1) {
+    score += 8;
+    reasons.push(`partial_name_match:${nameHits.join(',')}`);
   }
 
-  const contextHits = CONTEXT_TERMS.filter(term => text.includes(term));
-  if (contextHits.length) {
-    score += Math.min(45, contextHits.length * 15);
-    reasons.push(`context:${contextHits.join(',')}`);
+  // Local + network traces are the gold. Quiet, boring, connective tissue.
+  if (localHits.length) {
+    score += Math.min(35, localHits.length * 12);
+    reasons.push(`local_trace:${localHits.join(',')}`);
+  }
+
+  if (networkHits.length) {
+    score += Math.min(35, networkHits.length * 12);
+    reasons.push(`network_trace:${networkHits.join(',')}`);
+  }
+
+  if (beliefHits.length) {
+    score += Math.min(25, beliefHits.length * 10);
+    reasons.push(`belief_trace:${beliefHits.join(',')}`);
+  }
+
+  if (institutionHits.length) {
+    score += Math.min(25, institutionHits.length * 8);
+    reasons.push(`institution_trace:${institutionHits.join(',')}`);
+  }
+
+  // Police/wanted style results are not automatically gold; they are often obvious/noisy.
+  if (policeHits.length) {
+    score += 5;
+    reasons.push(`police_noise_or_context:${policeHits.join(',')}`);
+  }
+
+  if (noiseHits.length && !(localHits.length && networkHits.length)) {
+    score -= 10;
+    reasons.push(`noisy_source:${noiseHits.join(',')}`);
   }
 
   if (result.priority) {
-    score += 10;
+    score += 6;
     reasons.push('priority_domain');
   }
 
-  const rejectionHits = REJECTION_TERMS.filter(term => text.includes(term));
-  if (rejectionHits.length && !contextHits.length) {
-    score -= 35;
-    reasons.push(`outside_context:${rejectionHits.join(',')}`);
-  }
+  const hasGoldPattern =
+    (localHits.length && networkHits.length) ||
+    (networkHits.length && institutionHits.length) ||
+    (localHits.length && beliefHits.length) ||
+    (nameHits.length >= 2 && localHits.length) ||
+    (nameHits.length >= 2 && networkHits.length);
 
-  const keep = score >= 25 && !(/^unknown$/i.test(entityName));
-  return { score, reasons, keep, rejectionHits, contextHits };
+  const hasOnlySensationalPolice = policeHits.length && !networkHits.length && !beliefHits.length && !institutionHits.length;
+
+  const keep = hasGoldPattern || score >= 45;
+  const grade = hasGoldPattern ? 'gold_local_network_trace' : keep ? 'kept_context_trace' : 'rejected_or_background';
+
+  return {
+    score,
+    grade,
+    reasons,
+    keep,
+    hasGoldPattern,
+    hasOnlySensationalPolice,
+    localHits,
+    networkHits,
+    beliefHits,
+    institutionHits,
+    policeHits
+  };
 }
 
 function classifyFinding(result = {}, relevance = {}) {
-  if (!relevance.keep) return 'rejected_or_weak';
-  if (relevance.score >= 60) return 'probable_context_match';
-  if (relevance.score >= 35) return 'possible_context_match';
-  return 'weak_context_match';
+  if (!relevance.keep) return 'rejected_or_background';
+  if (relevance.grade === 'gold_local_network_trace') return 'gold_local_network_trace';
+  if (relevance.hasOnlySensationalPolice) return 'sensational_police_hit_requires_caution';
+  if (relevance.score >= 65) return 'strong_context_trace';
+  return 'weak_but_interesting_trace';
 }
 
 function isSearchableName(name = '') {
@@ -81,9 +148,11 @@ function buildQueries(name) {
     `${name} Companies House Shropshire`,
     `${name} Charity Commission Shropshire`,
     `${name} ecclesia Christadelphian`,
-    `${name} police court`,
+    `${name} parish chapel trust committee`,
     `"${name}" "Hamilton Russell"`,
-    `"${name}" Mottershead Hardman Claybrook Gee Boyne`
+    `"${name}" Mottershead Hardman Claybrook Gee Boyne`,
+    `"${name}" Dudmaston Hall`,
+    `"${name}" Burwarton Hall`
   ];
 }
 
@@ -135,6 +204,7 @@ export const networkResearchHook = {
         }
       }
 
+      keptFindings.sort((a, b) => b.relevance.score - a.relevance.score);
       diagnostics.push(...searchNotes.slice(0, 3));
       results.push({
         entity: e.name,
@@ -150,13 +220,15 @@ export const networkResearchHook = {
 
     return {
       stage: 'network_research_results',
-      mode: 'context_filtered_first_pass',
+      mode: 'local_network_trace_first_pass',
       entityCount: entities.length,
       queryLimit,
-      contextTerms: CONTEXT_TERMS,
+      localTerms: LOCAL_TERMS,
+      networkTerms: NETWORK_TERMS,
+      beliefTerms: BELIEF_TERMS,
       results,
       diagnostics: diagnostics.slice(0, 10),
-      warning: 'Search results are public-source leads. Context match does not prove identity or relationship; verify before use.'
+      warning: 'Search results are leads. Quiet local/network traces are prioritised; sensational police hits are downgraded unless they connect to the wider network.'
     };
   }
 };
