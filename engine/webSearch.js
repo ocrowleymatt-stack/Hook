@@ -1,5 +1,3 @@
-const SERP_API_KEY = process.env.SERP_API_KEY;
-
 const PRIORITY_DOMAINS = [
   'gov.uk',
   'company-information.service.gov.uk',
@@ -9,8 +7,23 @@ const PRIORITY_DOMAINS = [
   'parish',
   'church',
   'estate',
-  'hall'
+  'hall',
+  'ecclesia',
+  'christadelphian'
 ];
+
+function getApiKey() {
+  return process.env.SERP_API_KEY || '';
+}
+
+export function searchDiagnostics() {
+  const key = getApiKey();
+  return {
+    serpApiConfigured: Boolean(key),
+    keyLength: key ? key.length : 0,
+    keyPrefix: key ? `${key.slice(0, 4)}...` : null
+  };
+}
 
 function isPriority(link = '') {
   const lower = String(link).toLowerCase();
@@ -18,8 +31,10 @@ function isPriority(link = '') {
 }
 
 export async function searchWeb(query, limit = 5) {
+  const SERP_API_KEY = getApiKey();
+
   if (!SERP_API_KEY) {
-    return { query, results: [], note: 'SERP_API_KEY not configured' };
+    return { query, results: [], note: 'SERP_API_KEY not configured', diagnostics: searchDiagnostics() };
   }
 
   const params = new URLSearchParams({
@@ -30,22 +45,31 @@ export async function searchWeb(query, limit = 5) {
     gl: 'uk'
   });
 
-  const response = await fetch(`https://serpapi.com/search.json?${params.toString()}`);
-  const data = await response.json();
+  try {
+    const response = await fetch(`https://serpapi.com/search.json?${params.toString()}`);
+    const data = await response.json();
 
-  if (!response.ok || data.error) {
-    return { query, results: [], error: data.error || `${response.status} ${response.statusText}` };
+    if (!response.ok || data.error) {
+      return {
+        query,
+        results: [],
+        error: data.error || `${response.status} ${response.statusText}`,
+        diagnostics: searchDiagnostics()
+      };
+    }
+
+    const results = (data.organic_results || [])
+      .map(r => ({
+        title: r.title || '',
+        link: r.link || '',
+        snippet: r.snippet || '',
+        priority: isPriority(r.link || '')
+      }))
+      .sort((a, b) => Number(b.priority) - Number(a.priority))
+      .slice(0, limit);
+
+    return { query, results, diagnostics: searchDiagnostics() };
+  } catch (e) {
+    return { query, results: [], error: e?.message || String(e), diagnostics: searchDiagnostics() };
   }
-
-  const results = (data.organic_results || [])
-    .map(r => ({
-      title: r.title || '',
-      link: r.link || '',
-      snippet: r.snippet || '',
-      priority: isPriority(r.link || '')
-    }))
-    .sort((a, b) => Number(b.priority) - Number(a.priority))
-    .slice(0, limit);
-
-  return { query, results };
 }
