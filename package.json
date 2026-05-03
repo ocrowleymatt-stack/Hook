@@ -14,7 +14,6 @@
   },
   "dependencies": {
     "@google/genai": "latest",
-    "@openai/openai": "latest",
     "cors": "latest",
     "dotenv": "latest",
     "express": "latest",
