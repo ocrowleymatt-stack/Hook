@@ -4,34 +4,13 @@
   "description": "Autonomous AI Operations System",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"tsx src/server/app.ts\" \"vite\"",
-    "worker": "tsx src/jobs/worker.ts",
-    "build": "tsc && vite build",
-    "start": "node dist/server/app.js",
-    "preview": "vite preview",
-    "railway:start": "npm run start",
-    "render:start": "npm run start"
+    "dev": "node deploy/app.js",
+    "start": "node deploy/app.js"
   },
   "dependencies": {
-    "@google/genai": "latest",
     "cors": "latest",
     "dotenv": "latest",
     "express": "latest",
-    "node-fetch": "latest",
     "openai": "latest"
-  },
-  "devDependencies": {
-    "@types/cors": "latest",
-    "@types/express": "latest",
-    "@types/node": "latest",
-    "@types/react": "latest",
-    "@types/react-dom": "latest",
-    "@vitejs/plugin-react": "latest",
-    "concurrently": "latest",
-    "react": "latest",
-    "react-dom": "latest",
-    "tsx": "latest",
-    "typescript": "latest",
-    "vite": "latest"
   }
 }
