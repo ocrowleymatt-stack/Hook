@@ -32,6 +32,7 @@ function isPriority(link = '') {
 
 export async function searchWeb(query, limit = 5) {
   const SERP_API_KEY = getApiKey();
+  const timeoutMs = Number(process.env.SEARCH_TIMEOUT_MS || 6500);
 
   if (!SERP_API_KEY) {
     return { query, results: [], note: 'SERP_API_KEY not configured', diagnostics: searchDiagnostics() };
@@ -45,8 +46,11 @@ export async function searchWeb(query, limit = 5) {
     gl: 'uk'
   });
 
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
   try {
-    const response = await fetch(`https://serpapi.com/search.json?${params.toString()}`);
+    const response = await fetch(`https://serpapi.com/search.json?${params.toString()}`, { signal: controller.signal });
     const data = await response.json();
 
     if (!response.ok || data.error) {
@@ -70,6 +74,9 @@ export async function searchWeb(query, limit = 5) {
 
     return { query, results, diagnostics: searchDiagnostics() };
   } catch (e) {
-    return { query, results: [], error: e?.message || String(e), diagnostics: searchDiagnostics() };
+    const error = e?.name === 'AbortError' ? `search timeout after ${timeoutMs}ms` : (e?.message || String(e));
+    return { query, results: [], error, diagnostics: searchDiagnostics() };
+  } finally {
+    clearTimeout(timer);
   }
 }
