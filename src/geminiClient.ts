@@ -11,20 +11,28 @@ if (!apiKey) {
 
 export const ai = new GoogleGenAI({ apiKey });
 
-export async function generateText(prompt: string) {
+export async function generateText(prompt: string): Promise<string> {
   const response = await ai.models.generateContent({
     model: "gemini-2.0-flash",
     contents: prompt
   });
 
-  return response.text;
+  const text = response.text;
+  if (!text) {
+    throw new Error("Gemini returned an empty response");
+  }
+  return text;
 }
 
-export async function multiTurnChat(messages: { role: string; content: string }[]) {
+export async function multiTurnChat(messages: { role: string; content: string }[]): Promise<string> {
   const response = await ai.models.generateContent({
     model: "gemini-2.0-flash",
     contents: messages.map(m => ({ role: m.role, parts: [{ text: m.content }] }))
   });
 
-  return response.text;
+  const text = response.text;
+  if (!text) {
+    throw new Error("Gemini returned an empty response");
+  }
+  return text;
 }
