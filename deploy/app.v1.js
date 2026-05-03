@@ -49,7 +49,39 @@ function page() {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Hook OS v1</title>
   <style>
-    body{margin:0;background:#080511;color:#f5edff;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.shell{max-width:1100px;margin:auto;padding:24px}.card{background:#130d22;border:1px solid rgba(255,255,255,.12);border-radius:22px;padding:18px;margin:16px 0}h1{font-size:40px;margin:0 0 6px}.muted{color:#bbaadc}textarea{width:100%;min-height:140px;box-sizing:border-box;border-radius:14px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.07);color:white;padding:12px;font-size:15px}button{border:0;border-radius:12px;padding:10px 14px;margin:6px 6px 6px 0;background:#7c45ff;color:white;font-weight:800;cursor:pointer}.secondary{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.16)}pre{white-space:pre-wrap;word-break:break-word;background:#06030d;border-radius:14px;padding:12px;max-height:520px;overflow:auto}.row{display:flex;gap:8px;flex-wrap:wrap}.badge{display:inline-block;padding:6px 10px;border-radius:999px;background:rgba(124,69,255,.25)}
+    body{margin:0;background:#080511;color:#f5edff;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+    .shell{max-width:1180px;margin:auto;padding:24px}
+    .card{background:#130d22;border:1px solid rgba(255,255,255,.12);border-radius:22px;padding:18px;margin:16px 0}
+    h1{font-size:40px;margin:0 0 6px}.muted{color:#bbaadc}
+    textarea{width:100%;min-height:140px;box-sizing:border-box;border-radius:14px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.07);color:white;padding:12px;font-size:15px}
+    button{border:0;border-radius:12px;padding:10px 14px;margin:6px 6px 6px 0;background:#7c45ff;color:white;font-weight:800;cursor:pointer}
+    .secondary{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.16)}
+    pre{
+      white-space:pre-wrap;
+      word-break:break-word;
+      background:#06030d;
+      border-radius:14px;
+      padding:16px;
+      min-height:360px;
+      max-height:75vh;
+      overflow:auto;
+      resize:vertical;
+      font-size:14px;
+      line-height:1.45;
+      border:1px solid rgba(255,255,255,.10);
+    }
+    pre.fullscreen{
+      position:fixed;
+      inset:12px;
+      width:calc(100vw - 24px);
+      height:calc(100vh - 24px);
+      max-height:none;
+      z-index:9999;
+      background:#020106;
+      box-sizing:border-box;
+      box-shadow:0 0 0 9999px rgba(0,0,0,.82);
+    }
+    .row{display:flex;gap:8px;flex-wrap:wrap}.badge{display:inline-block;padding:6px 10px;border-radius:999px;background:rgba(124,69,255,.25)}
   </style>
 </head>
 <body>
@@ -66,6 +98,8 @@ function page() {
         <button id="chain">Run Chain</button>
         <button id="logs" class="secondary">View Logs</button>
         <button id="health" class="secondary">Health</button>
+        <button id="expand" class="secondary">Expand Output</button>
+        <button id="copy" class="secondary">Copy Output</button>
         <button id="clear" class="secondary">Clear</button>
       </div>
     </div>
@@ -95,8 +129,23 @@ document.addEventListener('click', async e => {
     }
     if(e.target.id === 'logs') return show(await api('/logs'));
     if(e.target.id === 'health') return show(await api('/health'));
+    if(e.target.id === 'expand'){
+      $('out').classList.toggle('fullscreen');
+      e.target.textContent = $('out').classList.contains('fullscreen') ? 'Shrink Output' : 'Expand Output';
+      return;
+    }
+    if(e.target.id === 'copy'){
+      await navigator.clipboard.writeText($('out').textContent || '');
+      return show('Output copied to clipboard.');
+    }
     if(e.target.id === 'clear') return show('Ready.');
   } catch(err) { show('Error: ' + err.message); }
+});
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape' && $('out').classList.contains('fullscreen')){
+    $('out').classList.remove('fullscreen');
+    const btn = $('expand'); if(btn) btn.textContent = 'Expand Output';
+  }
 });
 load().catch(e => show('Load failed: ' + e.message));
 </script>
