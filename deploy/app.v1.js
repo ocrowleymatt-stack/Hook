@@ -43,36 +43,63 @@ function page() {
 <title>Hook OS v1</title>
 <style>
 body{background:#080511;color:#f5edff;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;padding:18px}
-h1{margin:0 0 12px;color:#d4af37}.panel{background:#130d22;border:1px solid rgba(212,175,55,.28);border-radius:18px;padding:14px;margin:12px 0}textarea{width:100%;height:120px;box-sizing:border-box;border-radius:12px;background:#05020a;color:#f5edff;border:1px solid rgba(212,175,55,.35);padding:12px;font-size:16px}button{border:0;border-radius:12px;padding:11px 13px;margin:5px 5px 5px 0;background:#d4af37;color:#090511;font-weight:800}.secondary{background:#211735;color:#f5edff;border:1px solid rgba(212,175,55,.35)}pre{min-height:380px;max-height:72vh;overflow:auto;resize:vertical;background:#000;padding:14px;color:#d4af37;border-radius:14px;border:1px solid rgba(212,175,55,.35);white-space:pre-wrap;word-break:break-word;font-size:14px;line-height:1.45;-webkit-user-select:text;user-select:text}.status{color:#c9b8e8;font-size:14px}.hiddenCopy{position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:.01}.fullscreen{position:fixed!important;inset:10px!important;z-index:9999!important;max-height:none!important;height:calc(100vh - 20px)!important;box-sizing:border-box!important;box-shadow:0 0 0 9999px rgba(0,0,0,.86)}
+h1{margin:0 0 12px;color:#d4af37}.panel{background:#130d22;border:1px solid rgba(212,175,55,.28);border-radius:18px;padding:14px;margin:12px 0}textarea{width:100%;height:120px;box-sizing:border-box;border-radius:12px;background:#05020a;color:#f5edff;border:1px solid rgba(212,175,55,.35);padding:12px;font-size:16px}button{border:0;border-radius:12px;padding:11px 13px;margin:5px 5px 5px 0;background:#d4af37;color:#090511;font-weight:800}.secondary{background:#211735;color:#f5edff;border:1px solid rgba(212,175,55,.35)}.status{color:#c9b8e8;font-size:14px}.hiddenCopy{position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:.01}.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:10px 0}.metric{background:#05020a;border:1px solid rgba(212,175,55,.25);border-radius:14px;padding:10px}.metric b{display:block;color:#d4af37;font-size:20px}.section{background:#05020a;border:1px solid rgba(212,175,55,.25);border-radius:14px;margin:10px 0;overflow:hidden}.section summary{cursor:pointer;padding:12px;color:#d4af37;font-weight:800}.section pre{margin:0;border-radius:0;border:0;max-height:45vh}.pill{display:inline-block;border-radius:999px;padding:4px 8px;margin:2px;background:#211735;border:1px solid rgba(212,175,55,.35);font-size:12px}.ok{color:#8dffb0}.bad{color:#ff8d8d}.warn{color:#ffd56b}pre{min-height:260px;max-height:72vh;overflow:auto;resize:vertical;background:#000;padding:14px;color:#d4af37;border-radius:14px;border:1px solid rgba(212,175,55,.35);white-space:pre-wrap;word-break:break-word;font-size:14px;line-height:1.45;-webkit-user-select:text;user-select:text}.fullscreen{position:fixed!important;inset:10px!important;z-index:9999!important;max-height:none!important;height:calc(100vh - 20px)!important;box-sizing:border-box!important;box-shadow:0 0 0 9999px rgba(0,0,0,.86)}
 </style>
 </head>
 <body>
 <h1>Hook OS v1</h1>
 <div class="panel">
 <textarea id="command" placeholder="Tell Hook what to do…"></textarea>
-<div>
-<input type="file" id="file" accept=".json,.csv,.txt" />
-</div>
+<div><input type="file" id="file" accept=".json,.csv,.txt" /></div>
 <div>
 <button id="run">Run</button>
 <button id="copyAll" class="secondary">Copy All</button>
 <button id="selectAll" class="secondary">Select All</button>
 <button id="download" class="secondary">Download Output</button>
-<button id="expand" class="secondary">Expand</button>
+<button id="expand" class="secondary">Expand Raw</button>
 <button id="clear" class="secondary">Clear</button>
 </div>
 <div id="status" class="status">No dataset loaded.</div>
 </div>
 <div class="panel">
+<h2>Readable View</h2>
+<div id="readable">Ready.</div>
+</div>
+<div class="panel">
+<h2>Raw Output</h2>
 <pre id="out">Ready.</pre>
 <textarea id="copyBox" class="hiddenCopy" readonly></textarea>
 </div>
 <script>
 let dataset=null;
 let lastOutput='Ready.';
+let lastObject=null;
 const out=document.getElementById('out');
+const readable=document.getElementById('readable');
 const status=document.getElementById('status');
-function setOut(value){lastOutput=typeof value==='string'?value:JSON.stringify(value,null,2);out.textContent=lastOutput;}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function asJson(x){try{return JSON.stringify(x,null,2)}catch{return String(x)}}
+function metric(label,value){return '<div class="metric"><span>'+esc(label)+'</span><b>'+esc(value)+'</b></div>'}
+function renderReadable(obj){
+  if(typeof obj==='string'){readable.textContent=obj;return;}
+  const trace=obj.trace||obj.result?.trace||[];
+  const final=obj.final||obj.result?.final||obj;
+  const tasks=final?.report?.tasks||final?.tasks||final?.report?.previous?.tasks||[];
+  const chain=obj.chain||obj.result?.chain||[];
+  const html=[];
+  html.push('<div class="summary">'+metric('OK', obj.ok===false?'No':'Yes')+metric('Chain', chain.length||trace.length||'-')+metric('Trace Steps', trace.length||'-')+metric('Tasks', tasks.length||'-')+'</div>');
+  if(chain.length) html.push('<p>'+chain.map(x=>'<span class="pill">'+esc(x)+'</span>').join('')+'</p>');
+  if(trace.length){
+    html.push('<details class="section" open><summary>Execution Trace</summary><pre>'+esc(asJson(trace))+'</pre></details>');
+  }
+  if(tasks.length){
+    const top=tasks.slice(0,20).map(t=>'• '+(t.entity||t.name||t.id)+'\n  '+(t.publicSearchQueries||t.queries||[]).slice(0,3).join('\n  ')).join('\n\n');
+    html.push('<details class="section" open><summary>Top Research Tasks</summary><pre>'+esc(top)+'</pre></details>');
+  }
+  html.push('<details class="section"><summary>Final Output</summary><pre>'+esc(asJson(final))+'</pre></details>');
+  readable.innerHTML=html.join('');
+}
+function setOut(value){lastObject=value;lastOutput=typeof value==='string'?value:JSON.stringify(value,null,2);out.textContent=lastOutput;renderReadable(value);}
 async function copyText(text){
   try{await navigator.clipboard.writeText(text);status.textContent='Copied all output to clipboard.';return true;}catch(e){
     const box=document.getElementById('copyBox');box.value=text;box.focus();box.select();box.setSelectionRange(0,999999);
@@ -99,7 +126,7 @@ document.getElementById('selectAll').onclick=selectOutput;
 document.getElementById('download').onclick=()=>{
   const blob=new Blob([lastOutput],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='hook-output-'+Date.now()+'.json';a.click();URL.revokeObjectURL(url);status.textContent='Download created.';
 };
-document.getElementById('expand').onclick=(e)=>{out.classList.toggle('fullscreen');e.target.textContent=out.classList.contains('fullscreen')?'Shrink':'Expand';};
+document.getElementById('expand').onclick=(e)=>{out.classList.toggle('fullscreen');e.target.textContent=out.classList.contains('fullscreen')?'Shrink Raw':'Expand Raw';};
 document.getElementById('clear').onclick=()=>setOut('Ready.');
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&out.classList.contains('fullscreen'))out.classList.remove('fullscreen');});
 </script>
