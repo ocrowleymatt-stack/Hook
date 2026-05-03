@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Autonomous AI Operations System",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "concurrently \"tsx src/server/app.ts\" \"vite\"",
     "worker": "tsx src/jobs/worker.ts",
