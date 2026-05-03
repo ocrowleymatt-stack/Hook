@@ -3,14 +3,17 @@
   "version": "1.0.0",
   "description": "Autonomous AI Operations System",
   "type": "module",
+  "engines": {
+    "node": "18.x"
+  },
   "scripts": {
     "dev": "node deploy/app.js",
     "start": "node deploy/app.js"
   },
   "dependencies": {
-    "cors": "latest",
-    "dotenv": "latest",
-    "express": "latest",
-    "openai": "latest"
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.0",
+    "openai": "^4.0.0"
   }
 }
