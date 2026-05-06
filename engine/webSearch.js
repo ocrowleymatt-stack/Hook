@@ -32,7 +32,7 @@ function isPriority(link = '') {
 
 export async function searchWeb(query, limit = 5) {
   const SERP_API_KEY = getApiKey();
-  const timeoutMs = Number(process.env.SEARCH_TIMEOUT_MS || 6500);
+  const timeoutMs = Number(process.env.SEARCH_TIMEOUT_MS || 12000);
 
   if (!SERP_API_KEY) {
     return { query, results: [], note: 'SERP_API_KEY not configured', diagnostics: searchDiagnostics() };
