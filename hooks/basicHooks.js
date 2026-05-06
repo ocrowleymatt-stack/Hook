@@ -18,7 +18,13 @@ async function callAI(systemPrompt, userContent) {
     response_format: { type: 'json_object' }
   });
   const text = response.choices[0]?.message?.content || '{}';
-  try { return JSON.parse(text); } catch { return { raw: text }; }
+  // Strip markdown code fences (e.g. ```json\n{...}\n```) that some proxies return
+  const cleaned = text
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+  try { return JSON.parse(cleaned); } catch { return { raw: text }; }
 }
 
 export const deepResearchHook = {

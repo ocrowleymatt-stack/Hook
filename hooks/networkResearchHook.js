@@ -153,6 +153,24 @@ function isSearchableName(name = '') {
   return true;
 }
 
+/**
+ * Extract named entities from a plain text message.
+ * Splits on common separators (&, and, ,, ;, |, /) and treats each
+ * non-trivial token as a potential entity name.
+ */
+function extractEntitiesFromText(text = '') {
+  if (!text || typeof text !== 'string') return [];
+  // Split on & / and / , / ; / | / newline
+  const tokens = text
+    .split(/\s*(?:&|,|;|\||\n|\/)\s*|\s+and\s+/i)
+    .map(t => t.trim())
+    .filter(t => t.length > 0);
+
+  return tokens
+    .map((t, i) => ({ id: `text-entity-${i + 1}`, name: t }))
+    .filter(e => isSearchableName(e.name));
+}
+
 function buildQueries(name) {
   return [
     `${name} Shropshire Ironbridge`,
@@ -175,13 +193,19 @@ export const networkResearchHook = {
     const entityLimit = Number(process.env.NETWORK_RESEARCH_LIMIT || 3);
     const queryLimit = Number(process.env.NETWORK_QUERY_LIMIT || 4);
 
-    const entities = rawEntities
+    // Build entities from dataset first; fall back to extracting from message text
+    let entities = rawEntities
       .map((e, i) => ({
         id: e.id || e.phone || e['Phone (Normalized)'] || `entity-${i + 1}`,
         name: e.name || e.label || e['Primary Name'] || e.Name || e.name_display || e.id || `Entity ${i + 1}`
       }))
       .filter(e => isSearchableName(e.name))
       .slice(0, entityLimit);
+
+    // If no entities from dataset, try to extract from the message text
+    if (entities.length === 0 && message) {
+      entities = extractEntitiesFromText(message).slice(0, entityLimit);
+    }
 
     const results = [];
     const diagnostics = [];
