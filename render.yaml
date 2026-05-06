@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: hook-os
+    runtime: node
+    buildCommand: npm install
+    startCommand: node deploy/app.v1.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: OPENAI_API_KEY
+        sync: false
